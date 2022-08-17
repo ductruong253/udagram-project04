@@ -1,6 +1,6 @@
-import { CustomAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
+import { APIGatewayTokenAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
 import 'source-map-support/register'
-
+import { Key } from '../../auth/Key'
 import { verify, decode } from 'jsonwebtoken'
 import { createLogger } from '../../utils/logger'
 import Axios from 'axios'
@@ -15,7 +15,7 @@ const logger = createLogger('auth')
 const jwksUrl = 'https://dev-v1l0wntb.us.auth0.com/.well-known/jwks.json'
 
 export const handler = async (
-  event: CustomAuthorizerEvent
+  event: APIGatewayTokenAuthorizerEvent
 ): Promise<CustomAuthorizerResult> => {
   logger.info('Authorizing a user', event.authorizationToken)
   try {
@@ -55,20 +55,36 @@ export const handler = async (
 }
 
 async function verifyToken(authHeader: string): Promise<JwtPayload> {
-  const token = getToken(authHeader)
-  const jwt: Jwt = decode(token, { complete: true }) as Jwt
-  
+  try {
+      // TODO: Implement token verification
+      // You should implement it similarly to how it was implemented for the exercise for the lesson 5
+      // You can read more about how to do this here: https://auth0.com/blog/navigating-rs256-and-jwks/
 
-  // TODO: Implement token verification
-  // You should implement it similarly to how it was implemented for the exercise for the lesson 5
-  // You can read more about how to do this here: https://auth0.com/blog/navigating-rs256-and-jwks/
+      //step 1: decode JWT to get request KID:
+      const token = getToken(authHeader)
+      const jwt: Jwt = decode(token, { complete: true }) as Jwt
+      const requestKID: string = jwt?.header?.kid as string
+      //step 2: call to get certificate and return the matched key
+      const jwks = await Axios.get(jwksUrl)
+      const keyset: Array<Key> = jwks.data.keys
+      const matchedKey = keyset.filter((key) => key.kid === requestKID)
+      if (!matchedKey || !matchedKey.length)
+          throw new Error('No matched key found')
+      //step 3: build PEM content from 1st matched key
+      const PEM: string = buildPEMFromCert(matchedKey[0].x5c[0])
+      //step 3: verify the token
+      return verify(token, PEM, { algorithms: ['RS256'] }) as JwtPayload;
+      // console.log(verifyResult)
+  } catch (err) {
+      logger.error('Authorizer error: ', err)
+  }
 }
 
 function getToken(authHeader: string): string {
   if (!authHeader) throw new Error('No authentication header')
 
   if (!authHeader.toLowerCase().startsWith('bearer '))
-    throw new Error('Invalid authentication header')
+      throw new Error('Invalid authentication header')
 
   const split = authHeader.split(' ')
   const token = split[1]
@@ -76,6 +92,8 @@ function getToken(authHeader: string): string {
   return token
 }
 
-const buildPEMFromCert = (x509CertChain) => {
-  return `-----BEGIN CERTIFICATE-----\n${x509CertChain.match(/.{1,64}/g).join('\n')}\n-----END CERTIFICATE-----\n`;
+const buildPEMFromCert = (x509CertChain: string) => {
+  return `-----BEGIN CERTIFICATE-----\n${x509CertChain
+      .match(/.{1,64}/g)
+      .join('\n')}\n-----END CERTIFICATE-----\n`
 }
