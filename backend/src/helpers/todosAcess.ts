@@ -3,7 +3,9 @@ import { DocumentClient } from 'aws-sdk/clients/dynamodb'
 import { createLogger } from '../utils/logger'
 import { TodoItem } from '../models/TodoItem'
 import { UpdateTodoRequest } from '../requests/UpdateTodoRequest'
-// import { TodoUpdate } from '../models/TodoUpdate';
+import { createAttachmentPresignedUrl } from './attachmentUtils'
+import { env } from 'process'
+import { String } from 'aws-sdk/clients/batch'
 
 const AWSXRay = require('aws-xray-sdk')
 const XAWS = AWSXRay.captureAWS(AWS)
@@ -16,8 +18,8 @@ export class TodoAccess {
     constructor(
         private readonly docClient: DocumentClient = new XAWS.DynamoDB.DocumentClient(),
         // TODO: should be replaced with env.var after complete
-        private readonly todosTable = 'Todos-dev',
-        private readonly todosIndexName = 'CreatedAtIndex') { }
+        private readonly todosTable = env.TODOS_TABLE,
+        private readonly todosIndexName = env.TODOS_CREATED_AT_INDEX) { }
 
 
     getTodosByUserId = async (userId: string): Promise<TodoItem[]> => {
@@ -37,14 +39,13 @@ export class TodoAccess {
         return todos
     }
 
-    createTodo = async (todo: TodoItem): Promise<TodoItem[]> => {
+    createTodo = async (todo: TodoItem): Promise<TodoItem> => {
         logger.log('info', 'Creating todo with payload: '.concat(JSON.stringify(todo)))
         await this.docClient.put({
             TableName: this.todosTable,
             Item: todo
         }).promise()
-        let todos = await this.getTodosByUserId(todo.userId)
-        return todos
+        return todo
     }
 
     updateTodo = async (userId: string, todoId: string, updateTodo: UpdateTodoRequest): Promise<void> => {
@@ -56,24 +57,47 @@ export class TodoAccess {
                 "todoId": todoId
             },
             UpdateExpression: "set #name=:name, dueDate=:dueDate, done=:done",
-            ExpressionAttributeValues:{
+            ExpressionAttributeValues: {
                 ":name": updateTodo.name,
                 ":dueDate": updateTodo.dueDate,
                 ":done": updateTodo.done
             },
             ExpressionAttributeNames: {
-              "#name": "name"
+                "#name": "name"
             }
         }).promise()
     }
 
-    async deleteTodoItem(userId: string, todoId: string): Promise<void> {
+    deleteTodoItem = async (userId: string, todoId: string): Promise<void> => {
         await this.docClient.delete({
-          TableName: this.todosTable,
-          Key: {
-            "userId": userId,
-            "todoId": todoId
-          }
+            TableName: this.todosTable,
+            Key: {
+                "userId": userId,
+                "todoId": todoId
+            }
         }).promise()
-      }
+    }
+
+    generateUploadURL = async (userId: string, todoId: string): Promise<String> => {
+        const url = await createAttachmentPresignedUrl()
+        //update the to do Item with newly created presign URL
+        this.docClient.update({
+            TableName: this.todosTable,
+            Key: {
+                todoId,
+                userId
+            },
+            UpdateExpression: "set attachmentUrl = :attachmentUrl",
+            ExpressionAttributeValues: {
+                ":attachmentUrl": url,
+            }
+        }, (err, data) => {
+            if (err) {
+                logger.log('error', 'Failed to create attachement presigned URL: '.concat(err.message))
+                throw new Error(err.message)
+            }
+            logger.log('info', 'Created presign URL successfully: '.concat(JSON.stringify(data)))
+        })
+        return url
+    }
 }

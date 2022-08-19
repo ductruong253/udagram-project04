@@ -4,8 +4,7 @@ import { TodoItem } from '../models/TodoItem'
 import { CreateTodoRequest } from '../requests/CreateTodoRequest'
 import { UpdateTodoRequest } from '../requests/UpdateTodoRequest'
 import { createLogger } from '../utils/logger'
-import * as uuid from 'uuid';
-// import * as createError from 'http-errors'
+import * as uuid from 'uuid'
 
 // TODO: Implement businessLogic
 const logger = createLogger('todos')
@@ -16,7 +15,7 @@ export const getTodosByUserId = async (userId: string): Promise<TodoItem[]> => {
 }
 
 
-export const createTodo = async (userId: string, todo: CreateTodoRequest): Promise<TodoItem[]> => {
+export const createTodo = async (userId: string, todo: CreateTodoRequest): Promise<TodoItem> => {
     logger.log('info', 'Received todo create request: '.concat(JSON.stringify(todo)))
     const todoId = uuid.v4();
     const newTodo: TodoItem = {
@@ -27,8 +26,8 @@ export const createTodo = async (userId: string, todo: CreateTodoRequest): Promi
         done: false
     }
 
-    let updatedTodoList = await todoAccess.createTodo(newTodo);
-    return updatedTodoList;
+    await todoAccess.createTodo(newTodo);
+    return newTodo;
 }
 
 export const updateTodo = async (userId: string, todoId: string, updatedTodo: UpdateTodoRequest): Promise<void> => {
@@ -37,4 +36,9 @@ export const updateTodo = async (userId: string, todoId: string, updatedTodo: Up
 
 export const deleteTodo = async (userId: string, todoId: string): Promise<void> => {
     await todoAccess.deleteTodoItem(userId, todoId)
+}
+
+export const generateUploadURL = async (userId: string, todoId: string): Promise<string> => {
+    const url = await todoAccess.generateUploadURL(userId, todoId)
+    return url 
 }
