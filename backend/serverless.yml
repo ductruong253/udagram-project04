@@ -7,6 +7,8 @@ plugins:
   - serverless-webpack
   - serverless-iam-roles-per-function
   - serverless-plugin-tracing
+  - serverless-reqvalidator-plugin
+  - serverless-aws-documentation
 
 provider:
   name: aws
@@ -41,6 +43,16 @@ provider:
             - xray:PutTraceSegments
           Resource: '*'
 
+custom:
+  documentation:
+    models:
+      - name: createTodoRequest
+        contentType: application/json
+        schema: ${file(models/create-todo-model.json)}
+      - name: updateTodoRequest
+        contentType: application/json
+        schema: ${file(models/update-todo-model.json)}
+
 functions:
   Auth:
     handler: src/lambda/auth/auth0Authorizer.handler
@@ -55,6 +67,11 @@ functions:
           path: todos
           cors: true
           authorizer: Auth
+          documentation:
+            summary: Create a new todo
+            description: Create a new todo
+            requestModels:
+              'application/json': createTodoRequest
     iamRoleStatements:
       - Effect: Allow
         Action:
@@ -73,6 +90,11 @@ functions:
           path: todos
           cors: true
           authorizer: Auth
+          documentation:
+            summary: Create a new todo
+            description: Create a new todo
+            requestModels:
+              'application/json': updateTodoRequest
           request:
             schemas:
               application/json: ${file(models/create-todo-model.json)}
@@ -95,6 +117,11 @@ functions:
           method: patch
           cors: true
           path: todos/{todoId}
+          documentation:
+            summary: Update a todo
+            description: Update a todo
+            requestModels:
+              'application/json': updateTodoRequest
     iamRoleStatements:
       - Effect: Allow
         Action:
@@ -184,7 +211,15 @@ resources:
               ProjectionType: ALL
         BillingMode: PAY_PER_REQUEST
         TableName: ${self:provider.environment.TODOS_TABLE}
-
+    # Request validator rule definition
+    RequestBodyValidator:
+      Type: AWS::ApiGateway::RequestValidator
+      Properties:
+        Name: 'request-body-validator'
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ValidateRequestBody: true
+        ValidateRequestParameters: false
     # TODO: Complete the bucket properties below.
     # Do not forget to add the CorsConfiguration propoerty
     AttachmentsBucket:
